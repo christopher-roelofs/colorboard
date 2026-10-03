@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#08080b">
+<title>Colorboard</title>
+<style>
+  :root {
+    --bg: #08080b;
+    --panel: #15151b;
+    --panel-2: #1f1f28;
+    --line: #2b2b36;
+    --text: #ece9f5;
+    --muted: #8f8ca0;
+    --glow: #ffe12b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+  body {
+    height: 100dvh; display: flex; flex-direction: column;
+    user-select: none; -webkit-user-select: none; overflow: hidden;
+  }
+  button { font-family: inherit; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: calc(env(safe-area-inset-top) + 10px) 16px 4px;
+  }
+  .logo { font-weight: 800; letter-spacing: .14em; font-size: clamp(17px, 4.2vw, 24px); }
+  .logo span { color: var(--c); text-shadow: 0 0 4px var(--c), 0 0 14px var(--c), 0 0 28px var(--c); }
+  .toggles { display: flex; gap: 8px; }
+
+  #stage { flex: 1; min-height: 0; display: flex; padding: 6px 12px; }
+  .frame {
+    flex: 1; display: flex; border-radius: 20px; padding: 10px;
+    background: linear-gradient(160deg, #3a3a44, #18181d 38%, #0d0d11);
+    box-shadow: 0 12px 40px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.14), inset 0 -2px 8px rgba(0,0,0,.7);
+  }
+  .screen {
+    position: relative; flex: 1; border-radius: 12px; overflow: hidden; background: #030304;
+    box-shadow: inset 0 0 0 1px #000;
+  }
+  .screen::after { /* inner bevel shadow over the board */
+    content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    box-shadow: inset 0 3px 14px rgba(0,0,0,.85), inset 0 0 0 1px rgba(0,0,0,.9);
+  }
+  #board { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+
+  nav#toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 18px;
+    padding: 8px 12px calc(env(safe-area-inset-bottom) + 10px);
+  }
+  .palette, .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+
+  .swatch {
+    --s: clamp(28px, 7.4vw, 40px);
+    width: var(--s); height: var(--s); border-radius: 50%; border: 0; padding: 0; cursor: pointer;
+    background: radial-gradient(circle at 38% 32%, #fff 0 9%,
+      color-mix(in srgb, var(--c) 55%, white) 24%, var(--c) 56%, color-mix(in srgb, var(--c) 55%, black) 100%);
+    box-shadow: 0 0 0 2px #0009, 0 0 10px color-mix(in srgb, var(--c) 55%, transparent);
+    transition: transform .15s, box-shadow .15s;
+  }
+  .swatch[aria-pressed="true"] {
+    transform: scale(1.12);
+    box-shadow: 0 0 0 2px #0b0b0f, 0 0 0 4px #fff, 0 0 20px 5px var(--c);
+  }
+  .swatch.eraser {
+    background: radial-gradient(circle at 40% 35%, #2c2c36, #111116);
+    color: var(--muted); display: grid; place-items: center;
+    box-shadow: 0 0 0 2px #0009, inset 0 0 0 1px var(--line);
+  }
+  .swatch.eraser svg { width: 55%; height: 55%; }
+  .swatch.eraser[aria-pressed="true"] { color: #fff; box-shadow: 0 0 0 2px #0b0b0f, 0 0 0 4px #fff; }
+
+  .btn {
+    display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    min-width: 54px; padding: 7px 10px; border-radius: 12px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    font-size: 11px; font-weight: 600; letter-spacing: .02em;
+    transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+  }
+  .btn svg { width: 20px; height: 20px; }
+  .btn:hover { background: var(--panel-2); }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn[aria-pressed="true"] {
+    color: #fff3b0; border-color: color-mix(in srgb, var(--glow) 55%, transparent);
+    box-shadow: inset 0 0 14px color-mix(in srgb, var(--glow) 22%, transparent), 0 0 12px color-mix(in srgb, var(--glow) 18%, transparent);
+  }
+  .btn.icon { min-width: 0; padding: 8px; border-radius: 50%; }
+  .btn:focus-visible, .swatch:focus-visible, .pcard:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+  dialog {
+    border: 1px solid var(--line); border-radius: 18px; padding: 0;
+    width: min(720px, calc(100vw - 24px)); max-height: 86dvh;
+    background: #101015; color: var(--text);
+    box-shadow: 0 20px 60px rgba(0,0,0,.7);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(3px); }
+  .dlg { padding: 16px; }
+  .dlg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .dlg-head h2 { margin: 0; font-size: 18px; }
+  .dlg p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+  .pcard {
+    display: flex; flex-direction: column; gap: 6px; padding: 6px; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 12px; background: #060608; color: var(--text);
+    font-size: 13px; font-weight: 600; transition: border-color .15s, transform .15s;
+  }
+  .pcard:hover { border-color: #55556a; transform: translateY(-2px); }
+  .pcard canvas { width: 100%; aspect-ratio: 4 / 3; display: block; border-radius: 8px; }
+
+  @media (max-width: 520px) {
+    #stage { padding: 4px 6px; }
+    .frame { padding: 6px; border-radius: 16px; }
+    .screen { border-radius: 10px; }
+    nav#toolbar { gap: 8px; }
+    .palette { gap: 6px; }
+    .btn { min-width: 0; padding: 7px 9px; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo" id="logo" aria-label="Colorboard"></div>
+    <div class="toggles">
+      <button class="btn icon" id="twinkleBtn" aria-pressed="true" title="Twinkle (T)" aria-label="Twinkle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/></svg>
+      </button>
+      <button class="btn icon" id="lightBtn" aria-pressed="false" title="Room lights (L)" aria-label="Room lights">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="stage">
+    <div class="frame"><div class="screen" id="screen"><canvas id="board" aria-label="Peg board"></canvas></div></div>
+  </main>
+
+  <nav id="toolbar">
+    <div class="palette" id="palette"></div>
+    <div class="actions">
+      <button class="btn" id="patternsBtn" title="Patterns (P)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="2.2"/><circle cx="12" cy="6" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="9" cy="12" r="2.2"/><circle cx="15" cy="12" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="12" cy="18" r="2.2"/><circle cx="18" cy="18" r="2.2"/></svg>
+        Patterns
+      </button>
+      <button class="btn" id="undoBtn" title="Undo (Ctrl+Z)" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+        Undo
+      </button>
+      <button class="btn" id="clearBtn" title="Clear board">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>
+        Clear
+      </button>
+      <button class="btn" id="saveBtn" title="Save as image">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        Save
+      </button>
+    </div>
+  </nav>
+
+  <dialog id="patternDlg">
+    <div class="dlg">
+      <div class="dlg-head">
+        <h2>Patterns</h2>
+        <button class="btn icon" id="closeDlg" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <p>Picking a pattern replaces the board. You can always undo.</p>
+      <div class="pgrid" id="pgrid"></div>
+    </div>
+  </dialog>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Colors ----------
+  const COLORS = [
+    { id: 'R', name: 'Red',    hex: '#ff2b2b' },
+    { id: 'O', name: 'Orange', hex: '#ff8c1a' },
+    { id: 'Y', name: 'Yellow', hex: '#ffe12b' },
+    { id: 'G', name: 'Green',  hex: '#33ff66' },
+    { id: 'C', name: 'Cyan',   hex: '#2ae8ff' },
+    { id: 'B', name: 'Blue',   hex: '#2f6bff' },
+    { id: 'P', name: 'Purple', hex: '#a64dff' },
+    { id: 'K', name: 'Pink',   hex: '#ff4fc8' },
+    { id: 'W', name: 'White',  hex: '#fff4e0' },
+  ];
+  const COLOR = Object.fromEntries(COLORS.map(c => [c.id, c]));
+  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  const WHITE = [255, 255, 255], BLACK = [0, 0, 0];
+  const TAU = Math.PI * 2;
+
+  // ---------- Patterns ----------
+  // Letters map to color ids; '.' is an empty hole.
+  const PATTERNS = [
+    { name: 'Heart', art: [
+      '..RRR...RRR..',
+      '.RRRRR.RRRRR.',
+      'RRRRRRRRRRRRR',
+      'RRRRRRRRRRRRR',
+      'RRRRRRRRRRRRR',
+      '.RRRRRRRRRRR.',
+      '..RRRRRRRRR..',
+      '...RRRRRRR...',
+      '....RRRRR....',
+      '.....RRR.....',
+      '......R......',
+    ]},
+    { name: 'Smiley', art: [
+      '....YYYYY....',
+      '..YYYYYYYYY..',
+      '.YYYYYYYYYYY.',
+      '.YYYBYYYBYYY.',
+      'YYYYBYYYBYYYY',
+      'YYYYYYYYYYYYY',
+      'YYKYYYYYYYKYY',
+      'YYYRYYYYYRYYY',
+      '.YYYRRRRRYYY.',
+      '.YYYYYYYYYYY.',
+      '..YYYYYYYYY..',
+      '....YYYYY....',
+    ]},
+    { name: 'Rainbow', art: [
+      '.....RRRRR.....',
+      '...RROOOOORR...',
+      '..ROOYYYYYOOR..',
+      '.ROYYGGGGGYYOR.',
+      '.ROYGGBBBGGYOR.',
+      'ROYGBBPPPBBGYOR',
+      'ROYGBP...PBGYOR',
+      'ROYGBP...PBGYOR',
+      'ROYGBP...PBGYOR',
+      '.WWW.......WWW.',
+      'WWWWW.....WWWWW',
+    ]},
+    { name: 'Flower', art: [
+      '...KKK.KKK...',
+      '..KKKKKKKKK..',
+      '..KKKYYYKKK..',
+      '...KYYYYYK...',
+      '..KKKYYYKKK..',
+      '..KKKKKKKKK..',
+      '...KKK.KKK...',
+      '......G......',
+      '..GG..G......',
+      '...GGGG..GG..',
+      '......GGGG...',
+      '......G......',
+      '......G......',
+      '.GGGGGGGGGGG.',
+    ]},
+    { name: 'Star', art: [
+      '......Y......',
+      '.....YYY.....',
+      '.....YWY.....',
+      '....YYYYY....',
+      'YYYYYYWYYYYYY',
+      '.YYYYYYYYYYY.',
+      '..YYYYOYYYY..',
+      '...YYYYYYY...',
+      '...YYYYYYY...',
+      '..YYYY.YYYY..',
+      '..YYY...YYY..',
+      '.YYY.....YYY.',
+      '.Y.........Y.',
+    ]},
+    { name: 'Invader', art: [
+      '..G.....G..',
+      '...G...G...',
+      '..GGGGGGG..',
+      '.GG.GGG.GG.',
+      'GGGGGGGGGGG',
+      'G.GGGGGGG.G',
+      'G.G.....G.G',
+      '...GG.GG...',
+    ]},
+    { name: 'Tree', art: [
+      '......Y......',
+      '.....YYY.....',
+      '......G......',
+      '.....GGG.....',
+      '....GRGGG....',
+      '...GGGGBGG...',
+      '....GGGGG....',
+      '...GGYGGGG...',
+      '..GGGGGGKGG..',
+      '.GGBGGGGGGGG.',
+      'GGGGGGRGGGGGG',
+      '......O......',
+      '.....OOO.....',
+    ]},
+    { name: 'Hi!', art: [
+      'C...C.KKK.Y',
+      'C...C..K..Y',
+      'CCCCC..K..Y',
+      'C...C..K..Y',
+      'C...C..K...',
+      'C...C.KKK.Y',
+    ]},
+    // Generated patterns fill whatever board size you have. They return [col, row, color] in board coordinates.
+    { name: 'Rainbow Waves', gen(cols, rows) {
+      const seq = 'ROYGCBP', out = [];
+      for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
+        const band = Math.floor((c + Math.sin(r * 0.45) * 2.2 + 140) / 2) % seq.length;
+        out.push([c, r, seq[band]]);
+      }
+      return out;
+    }},
+    { name: 'Ripples', gen(cols, rows) {
+      const seq = 'WCBPKRO', out = [];
+      const cx = Math.floor((cols - 1) / 2), cy = Math.floor((rows - 1) / 2);
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const d = Math.hypot(c - cx, r - cy);
+        out.push([c, r, seq[Math.floor(d / 1.5) % seq.length], d]);
+      }
+      return out.sort((a, b) => a[3] - b[3]);
+    }},
+    { name: 'Starry Night', gen(cols, rows) {
+      const pick = 'WWWWWYYCB', out = [];
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
+        if (Math.random() < 0.09) out.push([c, r, pick[Math.floor(Math.random() * pick.length)]]);
+      return shuffle(out);
+    }},
+    { name: 'Confetti', gen(cols, rows) {
+      const out = [];
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
+        if (Math.random() < 0.38) out.push([c, r, COLORS[Math.floor(Math.random() * COLORS.length)].id]);
+      return shuffle(out);
+    }},
+  ];
+
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+
+  // Returns [dc, dr, color] relative to the board's center hole.
+  function patternCells(pat, cols, rows, cc, cr) {
+    if (pat.gen) return pat.gen(cols, rows).map(([c, r, col]) => [c - cc, r - cr, col]);
+    const h = pat.art.length, w = Math.max(...pat.art.map(s => s.length));
+    const dr0 = -Math.floor(h / 2);
+    const dc0 = -Math.floor(w / 2), out = [];
+    pat.art.forEach((line, y) => [...line].forEach((ch, x) => { if (COLOR[ch]) out.push([dc0 + x, dr0 + y, ch]); }));
+    return out;
+  }
+
+  // ---------- DOM ----------
+  const $ = id => document.getElementById(id);
+  const canvas = $('board'), screenEl = $('screen');
+  const ctx = canvas.getContext('2d');
+  const bg = document.createElement('canvas');           // board + empty holes (static)
+  const glowLayer = document.createElement('canvas');    // low-res additive light layer
+  const gctx = glowLayer.getContext('2d');
+  const GLOW_SCALE = 0.5;   // glow layer resolution relative to CSS px — it's blurry anyway, so this is cheap
+  const GLOW_D = 4;       // glow diameter, in holes
+  const POP = 380, FADE = 260;
+
+  // ---------- State ----------
+  let pegs = new Map();     // "dc,dr" -> { dc, dr, color, born, phase, speed }
+  let fading = [];
+  let current = 'R', tool = 'paint';
+  let twinkle = true, roomLight = false;
+  let undoStack = [];
+  let hover = null;
+  let W = 0, H = 0, dpr = 1, cols = 0, rows = 0, cell = 0, ox = 0, oy = 0, cc = 0, cr = 0;
+  let sprites = {}, holeSprite = null;
+  let raf = 0, animUntil = 0;
+
+  const key = (dc, dr) => dc + ',' + dr;
+  const newPeg = (dc, dr, color, born) => ({ dc, dr, color, born, phase: Math.random() * TAU, speed: 0.6 + Math.random() * 0.9 });
+  const pos = (c, r) => [ox + cell / 2 + c * cell, oy + cell / 2 + r * cell];
+
+  // ---------- Layout ----------
+  function layout() {
+    const rect = screenEl.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    W = rect.width; H = rect.height;
+    dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    bg.width = canvas.width; bg.height = canvas.height;
+    glowLayer.width = Math.ceil(W * GLOW_SCALE); glowLayer.height = Math.ceil(H * GLOW_SCALE);
+
+    const pad = W < 520 ? 6 : 12;
+    const target = Math.min(W, H) < 520 ? 20 : 28;
+    cols = Math.max(15, Math.floor((W - 2 * pad) / target));
+    rows = Math.max(13, Math.floor((H - 2 * pad) / target));
+    cell = Math.min((W - 2 * pad) / cols, (H - 2 * pad) / rows);
+    ox = (W - cell * cols) / 2;
+    oy = (H - cell * rows) / 2;
+    cc = Math.floor((cols - 1) / 2);
+    cr = Math.floor((rows - 1) / 2);
+
+    buildSprites();
+    buildBackground();
+    requestDraw();
+  }
+
+  function makeCanvas(size) { const c = document.createElement('canvas'); c.width = c.height = size; return c; }
+
+  function buildSprites() {
+    sprites = {};
+    for (const col of COLORS) {
+      const base = rgb(col.hex);
+
+      // Soft light halo, drawn additively on the low-res glow layer.
+      const gs = Math.max(8, Math.ceil(cell * GLOW_D * GLOW_SCALE * Math.min(dpr, 2)));
+      const glow = makeCanvas(gs), gx = glow.getContext('2d');
+      const hot = mix(base, WHITE, 0.25);
+      let g = gx.createRadialGradient(gs / 2, gs / 2, 0, gs / 2, gs / 2, gs / 2);
+      g.addColorStop(0, rgba(hot, 0.95));
+      g.addColorStop(0.1, rgba(base, 0.65));
+      g.addColorStop(0.25, rgba(base, 0.3));
+      g.addColorStop(0.5, rgba(base, 0.09));
+      g.addColorStop(1, rgba(base, 0));
+      gx.fillStyle = g; gx.fillRect(0, 0, gs, gs);
+
+      // The peg itself: a translucent faceted dome lit from behind.
+      const ps = Math.max(8, Math.ceil(cell * dpr));
+      const peg = makeCanvas(ps), px = peg.getContext('2d');
+      const c = ps / 2, r = ps * 0.43;
+      g = px.createRadialGradient(c - r * 0.15, c - r * 0.2, 0, c, c, r);
+      g.addColorStop(0, rgba(mix(base, WHITE, 0.92)));
+      g.addColorStop(0.28, rgba(mix(base, WHITE, 0.5)));
+      g.addColorStop(0.62, rgba(base));
+      g.addColorStop(0.88, rgba(mix(base, BLACK, 0.22)));
+      g.addColorStop(1, rgba(mix(base, BLACK, 0.45)));
+      px.fillStyle = g; px.beginPath(); px.arc(c, c, r, 0, TAU); px.fill();
+
+      // Hexagonal facet on the tip + spokes to the rim.
+      px.strokeStyle = rgba(mix(base, WHITE, 0.75), 0.32);
+      px.lineWidth = Math.max(1, r * 0.07);
+      px.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = i * TAU / 6 + Math.PI / 6;
+        const x = c + Math.cos(a) * r * 0.55, y = c + Math.sin(a) * r * 0.55;
+        i ? px.lineTo(x, y) : px.moveTo(x, y);
+      }
+      px.closePath(); px.stroke();
+      px.strokeStyle = rgba(mix(base, WHITE, 0.6), 0.16);
+      px.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = i * TAU / 6 + Math.PI / 6;
+        px.moveTo(c + Math.cos(a) * r * 0.55, c + Math.sin(a) * r * 0.55);
+        px.lineTo(c + Math.cos(a) * r * 0.95, c + Math.sin(a) * r * 0.95);
+      }
+      px.stroke();
+
+      // Specular highlight + rim.
+      const hx = c - r * 0.36, hy = c - r * 0.4;
+      g = px.createRadialGradient(hx, hy, 0, hx, hy, r * 0.4);
+      g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      px.fillStyle = g; px.beginPath(); px.arc(hx, hy, r * 0.4, 0, TAU); px.fill();
+      px.strokeStyle = rgba(mix(base, WHITE, 0.35), 0.55);
+      px.lineWidth = Math.max(1, r * 0.06);
+      px.beginPath(); px.arc(c, c, r - px.lineWidth / 2, 0, TAU); px.stroke();
+
+      sprites[col.id] = { glow, peg };
+    }
+
+    // Empty hole: recessed, catching a little light on its lower-right lip.
+    const hs = Math.max(6, Math.ceil(cell * dpr)), hc = hs / 2, hr = hs * 0.19;
+    holeSprite = makeCanvas(hs);
+    const hx = holeSprite.getContext('2d');
+    const hg = hx.createRadialGradient(hc - hr * 0.3, hc - hr * 0.3, 0, hc, hc, hr);
+    hg.addColorStop(0, '#000');
+    hg.addColorStop(0.7, '#000');
+    hg.addColorStop(1, roomLight ? '#0b0b0e' : '#060608');
+    hx.fillStyle = hg; hx.beginPath(); hx.arc(hc, hc, hr, 0, TAU); hx.fill();
+    hx.strokeStyle = roomLight ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.07)';
+    hx.lineWidth = Math.max(1, hr * 0.22);
+    hx.beginPath(); hx.arc(hc, hc, hr, -0.2, Math.PI * 0.75); hx.stroke();
+  }
+
+  function buildBackground() {
+    const b = bg.getContext('2d'), w = bg.width, h = bg.height;
+    const g = b.createRadialGradient(w / 2, h * 0.45, 0, w / 2, h / 2, Math.hypot(w, h) / 2);
+    if (roomLight) { g.addColorStop(0, '#2b2c35'); g.addColorStop(1, '#17181d'); }
+    else { g.addColorStop(0, '#0d0d12'); g.addColorStop(1, '#020203'); }
+    b.fillStyle = g; b.fillRect(0, 0, w, h);
+
+    // Faint paper speckle.
+    b.fillStyle = roomLight ? 'rgba(255,255,255,.035)' : 'rgba(255,255,255,.02)';
+    for (let i = 0, n = (w * h) / 450; i < n; i++) b.fillRect(Math.random() * w, Math.random() * h, dpr, dpr);
+
+    const hs = holeSprite.width;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const [x, y] = pos(c, r);
+      b.drawImage(holeSprite, x * dpr - hs / 2, y * dpr - hs / 2);
+    }
+  }
+
+  // ---------- Rendering ----------
+  const easeOutBack = t => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2; };
+
+  function requestDraw() { if (!raf) raf = requestAnimationFrame(frame); }
+
+  function frame() {
+    raf = 0;
+    const now = performance.now();
+    fading = fading.filter(f => now - f.died < FADE);
+    draw(now);
+    if (twinkle || now < animUntil || fading.length) raf = requestAnimationFrame(frame);
+  }
+
+  function collect(now, withHover) {
+    const items = [];
+    const add = (p, a, s, gs) => {
+      const c = p.dc + cc, r = p.dr + cr;
+      if (c < 0 || r < 0 || c >= cols || r >= rows) return;
+      const [x, y] = pos(c, r);
+      const tw = twinkle ? 0.8 + 0.12 * Math.sin(now * 0.0021 * p.speed + p.phase) + 0.08 * Math.sin(now * 0.0057 * p.speed + p.phase * 2.3) : 1;
+      items.push({ x, y, color: p.color, a, s, gs, tw });
+    };
+    for (const p of pegs.values()) {
+      if (now < p.born) continue;
+      const t = (now - p.born) / POP;
+      if (t < 1) add(p, Math.min(1, t * 3), 0.35 + 0.65 * easeOutBack(t), 1 + 0.9 * (1 - t) ** 2);
+      else add(p, 1, 1, 1);
+    }
+    for (const f of fading) {
+      const t = Math.max(0, (now - f.died) / FADE);
+      add(f, 1 - t, 1 - 0.35 * t, 1 + 0.4 * t);
+    }
+    if (withHover && hover && tool === 'paint' && !pegs.has(key(hover[0], hover[1]))) {
+      add({ dc: hover[0], dr: hover[1], color: current, phase: 0, speed: 0 }, 0.35, 0.9, 0.5);
+    }
+    return items;
+  }
+
+  function draw(now, withHover = true) {
+    const items = collect(now, withHover);
+    const glowMul = roomLight ? 0.5 : 1;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.drawImage(bg, 0, 0);
+
+    // Light pass: additive halos on a low-res layer, then blended over the board.
+    gctx.setTransform(1, 0, 0, 1, 0, 0);
+    gctx.globalCompositeOperation = 'source-over';
+    gctx.clearRect(0, 0, glowLayer.width, glowLayer.height);
+    gctx.globalCompositeOperation = 'lighter';
+    const gsize = cell * GLOW_D * GLOW_SCALE;
+    for (const it of items) {
+      gctx.globalAlpha = Math.min(1, it.a * it.tw * glowMul);
+      const s = gsize * it.gs;
+      gctx.drawImage(sprites[it.color].glow, it.x * GLOW_SCALE - s / 2, it.y * GLOW_SCALE - s / 2, s, s);
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(glowLayer, 0, 0, canvas.width, canvas.height);
+
+    // Peg pass.
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    for (const it of items) {
+      ctx.globalAlpha = it.a * (0.88 + 0.12 * it.tw);
+      const s = cell * it.s;
+      ctx.drawImage(sprites[it.color].peg, it.x - s / 2, it.y - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1;
+
+    // Eraser cursor ring.
+    if (withHover && hover && tool === 'erase') {
+      const c = hover[0] + cc, r = hover[1] + cr;
+      if (c >= 0 && r >= 0 && c < cols && r < rows) {
+        const [x, y] = pos(c, r);
+        ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(x, y, cell * 0.46, 0, TAU); ctx.stroke();
+      }
+    }
+  }
+
+  // ---------- Board operations ----------
+  function setPeg(dc, dr, color) {
+    const k = key(dc, dr), old = pegs.get(k);
+    if (old && old.color === color) return false;
+    const now = performance.now();
+    pegs.set(k, newPeg(dc, dr, color, now));
+    animUntil = Math.max(animUntil, now + POP);
+    requestDraw();
+    return true;
+  }
+
+  function removePeg(dc, dr) {
+    const k = key(dc, dr), old = pegs.get(k);
+    if (!old) return false;
+    pegs.delete(k);
+    fading.push({ ...old, died: performance.now() });
+    requestDraw();
+    return true;
+  }
+
+  const snapshot = () => Array.from(pegs.values(), p => [p.dc, p.dr, p.color]);
+
+  function pushUndo(snap = snapshot()) {
+    undoStack.push(snap);
+    if (undoStack.length > 80) undoStack.shift();
+    updateUndo();
+  }
+  function updateUndo() { $('undoBtn').disabled = !undoStack.length; }
+
+  function fadeAll(stagger) {
+    const now = performance.now();
+    for (const p of pegs.values()) if (p.born <= now) fading.push({ ...p, died: now + (stagger ? Math.random() * 300 : 0) });
+    pegs = new Map();
+  }
+
+  function clearBoard() {
+    if (!pegs.size) return;
+    pushUndo();
+    fadeAll(true);
+    requestDraw();
+    save();
+  }
+
+  function undo() {
+    const snap = undoStack.pop();
+    updateUndo();
+    if (!snap) return;
+    const now = performance.now(), next = new Map();
+    for (const [dc, dr, color] of snap) {
+      const k = key(dc, dr), old = pegs.get(k);
+      next.set(k, old && old.color === color && old.born <= now ? old : newPeg(dc, dr, color, now));
+    }
+    for (const [k, p] of pegs) if (next.get(k) !== p && p.born <= now) fading.push({ ...p, died: now });
+    pegs = next;
+    animUntil = now + POP;
+    requestDraw();
+    save();
+  }
+
+  // Lights pegs up one after another for a "powering on" effect.
+  function lightUp(cells, startDelay = 120) {
+    const n = cells.length, step = Math.min(18, 1500 / Math.max(1, n));
+    const t0 = performance.now() + startDelay;
+    cells.forEach(([dc, dr, color], i) => pegs.set(key(dc, dr), newPeg(dc, dr, color, t0 + i * step)));
+    animUntil = t0 + n * step + POP;
+    requestDraw();
+  }
+
+  function applyPattern(pat) {
+    pushUndo();
+    fadeAll(false);
+    lightUp(patternCells(pat, cols, rows, cc, cr));
+    save();
+  }
+
+  // ---------- Persistence ----------
+  const STORE = 'colorboard:v2';
+  function save() {
+    try { localStorage.setItem(STORE, JSON.stringify({ pegs: snapshot(), current, twinkle, roomLight })); } catch {}
+  }
+  function load() {
+    try { return JSON.parse(localStorage.getItem(STORE)); } catch { return null; }
+  }
+
+  // ---------- Input ----------
+  let stroke = null;
+
+  function hitAt(px, py) {
+    const c = Math.floor((px - ox) / cell), r = Math.floor((py - oy) / cell);
+    return c >= 0 && r >= 0 && c < cols && r < rows ? [c - cc, r - cr] : null;
+  }
+
+  function localPoint(e) {
+    const rect = canvas.getBoundingClientRect();
+    return [e.clientX - rect.left, e.clientY - rect.top];
+  }
+
+  function paintPoint(x, y) {
+    const h = hitAt(x, y);
+    if (!h) return;
+    const k = key(h[0], h[1]);
+    if (stroke.visited.has(k)) return;
+    stroke.visited.add(k);
+    const changed = stroke.mode === 'erase' ? removePeg(h[0], h[1]) : setPeg(h[0], h[1], current);
+    if (changed) stroke.changed = true;
+  }
+
+  // Interpolate between samples so fast drags don't skip holes.
+  function paintTo(x, y) {
+    const [lx, ly] = stroke.last;
+    const dist = Math.hypot(x - lx, y - ly), steps = Math.max(1, Math.ceil(dist / (cell * 0.3)));
+    for (let i = 1; i <= steps; i++) paintPoint(lx + (x - lx) * i / steps, ly + (y - ly) * i / steps);
+    stroke.last = [x, y];
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    if (stroke || e.button === 1) return;
+    e.preventDefault();
+    const [x, y] = localPoint(e);
+    const h = hitAt(x, y);
+    let mode = tool === 'erase' || e.button === 2 ? 'erase' : 'paint';
+    // Tapping a peg that's already the selected color pulls it out (and drag-erases from there).
+    if (h && mode === 'paint') { const old = pegs.get(key(h[0], h[1])); if (old && old.color === current) mode = 'erase'; }
+    stroke = { id: e.pointerId, mode, changed: false, before: snapshot(), visited: new Set(), last: [x, y] };
+    canvas.setPointerCapture(e.pointerId);
+    paintPoint(x, y);
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    if (e.pointerType === 'mouse') {
+      const [x, y] = localPoint(e), h = hitAt(x, y);
+      const changed = String(h) !== String(hover);
+      hover = h;
+      if (changed) requestDraw();
+    }
+    if (!stroke || e.pointerId !== stroke.id) return;
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    for (const ev of (evs.length ? evs : [e])) paintTo(...localPoint(ev));
+  });
+
+  function endStroke(e) {
+    if (!stroke || e.pointerId !== stroke.id) return;
+    if (stroke.changed) { pushUndo(stroke.before); save(); }
+    stroke = null;
+  }
+  canvas.addEventListener('pointerup', endStroke);
+  canvas.addEventListener('pointercancel', endStroke);
+  canvas.addEventListener('pointerleave', () => { if (hover) { hover = null; requestDraw(); } });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+  // ---------- UI ----------
+  const logo = $('logo');
+  [...'COLORBOARD'].forEach((ch, i) => {
+    const s = document.createElement('span');
+    s.textContent = ch;
+    s.style.setProperty('--c', COLORS[i % COLORS.length].hex);
+    logo.appendChild(s);
+  });
+
+  const palette = $('palette');
+  const swatches = [];
+  COLORS.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'swatch';
+    b.style.setProperty('--c', c.hex);
+    b.title = `${c.name} (${i + 1})`;
+    b.setAttribute('aria-label', c.name);
+    b.onclick = () => selectColor(c.id);
+    b.dataset.id = c.id;
+    palette.appendChild(b);
+    swatches.push(b);
+  });
+  const eraser = document.createElement('button');
+  eraser.className = 'swatch eraser';
+  eraser.title = 'Eraser (E)';
+  eraser.setAttribute('aria-label', 'Eraser');
+  eraser.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4-4a2 2 0 0 1 0-2.8L13.2 4a2 2 0 0 1 2.8 0l4 4a2 2 0 0 1 0 2.8L11 21z"/><path d="M22 21H7"/><path d="m5 11 8 8"/></svg>';
+  eraser.onclick = () => selectEraser();
+  palette.appendChild(eraser);
+
+  function syncTools() {
+    swatches.forEach(b => b.setAttribute('aria-pressed', String(tool === 'paint' && b.dataset.id === current)));
+    eraser.setAttribute('aria-pressed', String(tool === 'erase'));
+    document.documentElement.style.setProperty('--glow', COLOR[current].hex);
+    requestDraw();
+  }
+  function selectColor(id) { current = id; tool = 'paint'; syncTools(); save(); }
+  function selectEraser() { tool = 'erase'; syncTools(); }
+
+  function setTwinkle(on) { twinkle = on; $('twinkleBtn').setAttribute('aria-pressed', String(on)); requestDraw(); }
+  function setRoomLight(on) {
+    roomLight = on;
+    $('lightBtn').setAttribute('aria-pressed', String(on));
+    if (cell) { buildSprites(); buildBackground(); }
+    requestDraw();
+  }
+
+  $('twinkleBtn').onclick = () => { setTwinkle(!twinkle); save(); };
+  $('lightBtn').onclick = () => { setRoomLight(!roomLight); save(); };
+  $('undoBtn').onclick = undo;
+  $('clearBtn').onclick = clearBoard;
+  $('saveBtn').onclick = () => {
+    draw(performance.now(), false);
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'colorboard.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    });
+    requestDraw();
+  };
+
+  // Pattern picker with lit-up previews.
+  const dlg = $('patternDlg'), pgrid = $('pgrid');
+  function drawPreview(cv, pat) {
+    const pw = 160, ph = 120, d = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = pw * d; cv.height = ph * d;
+    const x = cv.getContext('2d');
+    x.scale(d, d);
+    x.fillStyle = '#040406'; x.fillRect(0, 0, pw, ph);
+    const pcols = 18, prows = 13, pcc = 8, pcr = 6;
+    const cells = patternCells(pat, pcols, prows, pcc, pcr);
+    const hx = dc => dc, hy = dr => dr;
+    let minX = Infinity, maxX = -Infinity, minR = Infinity, maxR = -Infinity;
+    for (const [dc, dr] of cells) { minX = Math.min(minX, hx(dc, dr)); maxX = Math.max(maxX, hx(dc, dr)); minR = Math.min(minR, dr); maxR = Math.max(maxR, dr); }
+    const m = pat.gen ? 0.5 : 1.5;
+    const s = Math.min(pw / (maxX - minX + 2 * m + 1), ph / (hy(maxR) - hy(minR) + 2 * m + 1));
+    const offX = pw / 2 - ((minX + maxX) / 2) * s, offY = ph / 2 - ((hy(minR) + hy(maxR)) / 2) * s;
+    x.fillStyle = 'rgba(255,255,255,.06)';
+    for (let dr = minR - 2; dr <= maxR + 2; dr++) for (let dc = Math.floor(minX) - 3; dc <= Math.ceil(maxX) + 3; dc++) {
+      x.beginPath(); x.arc(offX + hx(dc, dr) * s, offY + hy(dr) * s, s * 0.14, 0, TAU); x.fill();
+    }
+    x.globalCompositeOperation = 'lighter';
+    for (const [dc, dr, col] of cells) {
+      const px = offX + hx(dc, dr) * s, py = offY + hy(dr) * s, hex = COLOR[col].hex;
+      x.shadowColor = hex; x.shadowBlur = s * 1.3;
+      x.fillStyle = hex;
+      x.beginPath(); x.arc(px, py, s * 0.38, 0, TAU); x.fill();
+      x.shadowBlur = 0;
+      x.fillStyle = 'rgba(255,255,255,.55)';
+      x.beginPath(); x.arc(px - s * 0.06, py - s * 0.08, s * 0.16, 0, TAU); x.fill();
+    }
+  }
+  PATTERNS.forEach(pat => {
+    const b = document.createElement('button');
+    b.className = 'pcard';
+    const cv = document.createElement('canvas');
+    b.append(cv, pat.name);
+    b.onclick = () => { dlg.close(); applyPattern(pat); };
+    pgrid.appendChild(b);
+    pat._preview = cv;
+  });
+  function openPatterns() {
+    PATTERNS.forEach(p => drawPreview(p._preview, p)); // redraw so random patterns look fresh
+    dlg.showModal();
+  }
+  $('patternsBtn').onclick = openPatterns;
+  $('closeDlg').onclick = () => dlg.close();
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+
+  window.addEventListener('keydown', e => {
+    if (dlg.open) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= COLORS.length) selectColor(COLORS[n - 1].id);
+    else if (e.key === '0' || e.key.toLowerCase() === 'e') selectEraser();
+    else if (e.key.toLowerCase() === 't') $('twinkleBtn').click();
+    else if (e.key.toLowerCase() === 'l') $('lightBtn').click();
+    else if (e.key.toLowerCase() === 'p') { e.preventDefault(); openPatterns(); }
+  });
+
+  // ---------- Boot ----------
+  const saved = load();
+  if (saved) {
+    if (COLOR[saved.current]) current = saved.current;
+    setTwinkle(saved.twinkle !== false);
+    setRoomLight(!!saved.roomLight);
+  }
+  syncTools();
+  new ResizeObserver(layout).observe(screenEl);
+  layout();
+
+  if (saved && Array.isArray(saved.pegs) && saved.pegs.length) {
+    const cells = saved.pegs.filter(p => COLOR[p[2]]).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+    lightUp(cells, 250);
+  } else {
+    lightUp(patternCells(PATTERNS[0], cols, rows, cc, cr), 300);
+  }
+})();
+</script>
+</body>
+</html>
